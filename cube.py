@@ -2,7 +2,6 @@
 
 import logging
 
-
 import OpenGL.GL as oglgl
 
 import color
@@ -52,6 +51,11 @@ class Cube(object):
     POINT_H = (-1.0, -1.0, 1.0)
 
     def inverse(self, x):
+        """
+        取反
+        :param x:
+        :return:
+        """
         if x == 0:
             return x
         return -x
