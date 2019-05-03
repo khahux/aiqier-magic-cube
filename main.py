@@ -60,20 +60,20 @@ class Camera:
         #print ve,vt
         glLoadIdentity()
         gluLookAt(ve[0],ve[1],ve[2],vt[0],vt[1],vt[2],0.0,1.0,0.0)
-    def keypress(this,key, x, y):
-        if key in ('e', 'E'):
+    def keypress(this,key):
+        if key in ('1'):
             this.move(0.,0.,1 * this.offest)
-        if key in ('f', 'F'):
+        if key in ('2'):
             this.move(1 * this.offest,0.,0.)
-        if key in ('s', 'S'):
+        if key in ('3'):
             this.move(-1 * this.offest,0.,0.)
-        if key in ('d', 'D'):
+        if key in ('4'):
             this.move(0.,0.,-1 * this.offest)
-        if key in ('w', 'W'):
+        if key in ('5'):
             this.move(0.,1 * this.offest,0.)
-        if key in ('r', 'R'):
+        if key in ('6'):
             this.move(0.,-1 * this.offest,0.)
-        if key in ('v', 'V'):
+        if key in ('7'):
             #this.__bthree = not this.__bthree
             this.setthree(not this.__bthree)
         if key == GLUT_KEY_UP:
@@ -95,19 +95,24 @@ class Window(object):
     def __init__(self):
         global window
         glutInit(sys.argv)
-        glutInitDisplayMode(GLUT_RGBA | GLUT_SINGLE)
-        glutInitWindowSize(640,400)
+        glutInitDisplayMode(GLUT_RGBA | GLUT_SINGLE | GLUT_DEPTH)
+        glutInitWindowSize(1280, 720)
         glutInitWindowPosition(400,400)
         window = glutCreateWindow("opengl")
+        glEnable(GL_DEPTH_TEST)
+        glDepthFunc(GL_LEQUAL)
         glutDisplayFunc(self.drawGLScene)
         glutIdleFunc(self.drawGLScene)
         glutReshapeFunc(self.reSizeGLScene, 640, 400)
 
-        glutKeyboardFunc(self.keylistener)
-        glutSpecialFunc(self.keylistener)
-
         self.camera = Camera()
         self.magicCube = MagicCube()
+
+        glutKeyboardFunc(self.keylistener)
+        glutSpecialFunc(self.keylistener)
+        glutMotionFunc(self.camera.mouse)
+
+
 
         #self._cubes = []
         #self._cubes.append(Cube(-1.0, 0.0, 0.0, 0.0, 0.0, 0.0))
@@ -170,7 +175,8 @@ class Window(object):
         if key in 'a,b,c,d,e,f,g,h,i,A,B,C,D,E,F,G,H,I':
             self.magicCube.totate(key.upper(), 0)
 
-
+        elif key in "1234567":
+            self.camera.keypress(key)
 
         #if key == GLUT_KEY_LEFT:
         #    self.magicCube.totate_z_clockwise()
@@ -193,7 +199,8 @@ class Window(object):
             self.camera.move(0.,0., 1 * Window.DIMENSION_EYE)
         elif key in ('s', 'S'):
             self.camera.move(0.,0.,-1 * Window.DIMENSION_EYE)
-
+        else:
+            self.camera.mouse(x, y)
 #        elif symbol == key.E:
 #            for cube in self._cubes:
 #                cube.translatez(-Window.DIMENSION_TRANSLATE)

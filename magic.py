@@ -4,11 +4,15 @@ import pprint
 
 import math
 import random
+import time
 
 from OpenGL.GL import *
 from OpenGL.GLUT import *
 from OpenGL.GLU import *
 import OpenGL.GL as OGLGL
+
+logger = logging.getLogger(__name__)
+logging.basicConfig(level=logging.DEBUG, format='%(asctime)s %(filename)s[line:%(lineno)d] %(levelname)s %(message)s')
 
 def rotate(pos, loc, ran):
     u, v, w = pos
@@ -17,6 +21,149 @@ def rotate(pos, loc, ran):
     vy = v * math.cos(math.radians(ran)) + (z*u - x*w) * math.sin(math.radians(ran)) + y * (x*u + y*v + z*w) * ( 1- math.cos(math.radians(ran)))
     vz = w * math.cos(math.radians(ran)) + (x*v - y*u) * math.sin(math.radians(ran)) + z * (x*u + y*v + z*w) * ( 1- math.cos(math.radians(ran)))
     return vx, vy, vz
+
+class Boy(object):
+    """
+    一个类,像一双手一样,拧魔方
+    """
+
+    REFLEX_ARC = 100
+    ROTATE_SIDE = "FBUDLR"
+    MEMORY_SIZE = 50
+
+    PLAY_STATUS_GO = 0
+    PLAY_STATUS_BACK = 1
+
+    PLAY_COUNT = 1
+
+    def __init__(self):
+        self._rotate_side = None
+        self._last_timestamp = self.get_current_time_ms()
+        self._memory = []
+        self._play_status = Boy.PLAY_STATUS_GO
+        self._memory_stack_temp = []
+        self._play_count = Boy.PLAY_COUNT
+
+    def pop_memory(self):
+        if  len(self._memory_stack_temp) > 0:
+            return self._memory_stack_temp.pop()
+        else:
+            first, count = self.pop_same_list(self._memory)
+            if first is None:
+                return None
+            else:
+                temp = self.get_inverse_operation(first, count)
+                if temp is None:
+                    return None
+                else:
+                    self._memory_stack_temp = list(temp)
+                    return self._memory_stack_temp.pop()
+
+
+    def pop_same_list(self, li):
+        if li is None or li == []:
+            return (None,0)
+        first = li.pop()
+        count = 1
+        for i in li[: : -1]:
+            if i != first:
+                break
+            else:
+                count += 1
+        for i in range(count-1):
+            li.pop()
+
+        return (first, count)
+
+    def get_inverse_operation(self, side, count):
+        if count == 1:
+            return side*3
+        elif count == 2:
+            return side*2
+        elif count == 3:
+            return side
+        else:
+            return None
+
+    def play_go(self, magicCube):
+        """
+        正着玩
+        :param magicCube:
+        :return:
+        """
+        if self._rotate_side is None:
+            self._rotate_side = self.random_side()
+
+        isOk = magicCube.rotate_side(self._rotate_side)
+        if not isOk:
+            self._rotate_side = None
+        else:
+            # 说明成功的完成了一次旋转
+            if magicCube.is_pause():
+                self._memory.append(self._rotate_side)
+                self._rotate_side = None
+
+    def play_back(self, magicCube):
+        """
+        反着玩
+        :param magicCube:
+        :return:
+        """
+        if self._rotate_side is None:
+            temp = self.pop_memory()
+            if temp is not None:
+                logger.info("calcute inverse operation: %s" %(temp,))
+                self._rotate_side = temp
+            else:
+                return
+
+        isOk = magicCube.rotate_side(self._rotate_side)
+        if not isOk:
+            self._rotate_side = None
+        else:
+            # 说明成功的完成了一次旋转
+            if magicCube.is_pause():
+                self._rotate_side = None
+
+
+    def play(self, magicCube):
+        if self._last_timestamp is None or self.get_current_time_ms() - self._last_timestamp < Boy.REFLEX_ARC:
+            return
+
+        if len(self._memory) > Boy.MEMORY_SIZE and self._rotate_side is None:
+            self._play_status = Boy.PLAY_STATUS_BACK
+        elif len(self._memory) == 0 and len(self._memory_stack_temp) == 0 and self._rotate_side is None:
+            if self._play_status == Boy.PLAY_STATUS_BACK:
+                print self._memory_stack_temp
+                print self._rotate_side
+                self._play_count -= 1
+
+            self._play_status = Boy.PLAY_STATUS_GO
+
+        if self._play_count == 0:
+            logger.info("FINISH")
+            return
+
+        if self._play_status == Boy.PLAY_STATUS_GO:
+            self.play_go(magicCube)
+        else:
+            self.play_back(magicCube)
+
+
+
+
+
+    def random_side(self):
+        return random.choice(Boy.ROTATE_SIDE)
+
+    def get_current_time_ms(self):
+        """
+        获得当前毫秒时间戳
+        :return:
+        """
+        return int(time.time()*1000)
+
+
 
 class Camera(object):
     """
@@ -38,17 +185,47 @@ class Camera(object):
 
         self._up_xyz = (0, 1, 0)
 
-    def rove(self):
-        self.revolution_y()
 
-    def revolution_y(self):
+    def revolution_y_right(self):
         """
         绕y轴公转
         :return:
         """
         self._x, self._y, self._z = rotate((self._x, self._y, self._z), (0, 1, 0), Camera.ROVE_ANGLE)
-        self._x, self._y, self._z = -0.523359562429, 7.07106781187, 9.98629534755
-        #print self._x, self._y, self._z
+
+    def revolution_y_left(self):
+        """
+        绕y轴公转
+        :return:
+        """
+        self._x, self._y, self._z = rotate((self._x, self._y, self._z), (0, -1, 0), Camera.ROVE_ANGLE)
+
+    def revolution_x_right(self):
+        """
+        绕x轴公转
+        :return:
+        """
+        self._x, self._y, self._z = rotate((self._x, self._y, self._z), (1, 0, 0), Camera.ROVE_ANGLE)
+
+    def revolution_x_left(self):
+        """
+        绕x轴公转
+        :return:
+        """
+        self._x, self._y, self._z = rotate((self._x, self._y, self._z), (-1, 0, 0), Camera.ROVE_ANGLE)
+    def revolution_z_right(self):
+        """
+        绕y轴公转
+        :return:
+        """
+        self._x, self._y, self._z = rotate((self._x, self._y, self._z), (0, 0, 1), Camera.ROVE_ANGLE)
+
+    def revolution_z_left(self):
+        """
+        绕y轴公转
+        :return:
+        """
+        self._x, self._y, self._z = rotate((self._x, self._y, self._z), (0, 0, -1), Camera.ROVE_ANGLE)
 
 
     def reset_angle(self, angle):
@@ -85,62 +262,20 @@ class Camera(object):
 
     def direction(self):
         return -self._x, -self._y, -self._z
-        # if this.zangle > math.pi * 2.0 :
-        #     this.zangle < - this.zangle - math.pi * 2.0
-        # elif this.zangle < 0. :
-        #     this.zangle < - this.zangle + math.pi * 2.0
-        # len = 1. if not this.__bthree else this.length if 0. else 1.
-        # xy = math.cos(this.yangle) * len
-        # x = this.origin[0] + xy * math.sin(this.zangle)
-        # y = this.origin[1] + len * math.sin(this.yangle)
-        # z = this.origin[2] + xy * math.cos(this.zangle)
-        # return [x,y,z]
+
 
     def toup(self):
         return self._up_xyz
 
-    # def move(this,x,y,z):
-    #     sinz,cosz = math.sin(this.zangle),math.cos(this.zangle)
-    #     xstep,zstep = x * cosz + z * sinz,z * cosz - x * sinz
-    #     if this.__bthree :
-    #         xstep = -xstep
-    #         zstep = -zstep
-    #     this.origin = [this.origin[0] + xstep,this.origin[1] + y,this.origin[2] + zstep]
-    # def rotate(this,z,y):
-    #     this.zangle,this.yangle = this.zangle - z,this.yangle + y if not this.__bthree else -y
     def setLookat(self):
         ve,vt = self.eye(), self.direction()
         upxyz = self.toup()
         #print ve,vt
+        glMatrixMode(GL_MODELVIEW)
         glLoadIdentity()
+
         gluLookAt(ve[0],ve[1],ve[2],vt[0],vt[1],vt[2], upxyz[0],upxyz[1],upxyz[2])
-        ##gluLookAt(20, 20, 20 ,0, 0, 0,  0.0,1.0,0.0)
-    #def keypress(this,key, x, y):
-    #    if key in ('e', 'E'):
-    #        this.move(0.,0.,1 * this.offest)
-    #    if key in ('f', 'F'):
-    #        this.move(1 * this.offest,0.,0.)
-    #    if key in ('s', 'S'):
-    #        this.move(-1 * this.offest,0.,0.)
-    #    if key in ('d', 'D'):
-    #        this.move(0.,0.,-1 * this.offest)
-    #    if key in ('w', 'W'):
-    #        this.move(0.,1 * this.offest,0.)
-    #    if key in ('r', 'R'):
-    #        this.move(0.,-1 * this.offest,0.)
-    #    if key in ('v', 'V'):
-    #        #this.__bthree = not this.__bthree
-    #        this.setthree(not this.__bthree)
-    #    if key == GLUT_KEY_UP:
-    #        this.offest = this.offest + 0.1
-    #    if key == GLUT_KEY_DOWN:
-    #        this.offest = this.offest - 0.1
-    #def mouse(this,x,y):
-    #    rx = (x - this.mouselocation[0]) * this.offest * 0.1
-    #    ry = (y - this.mouselocation[1]) * this.offest * -0.1
-    #    this.rotate(rx,ry)
-    #    print x,y
-    #    this.mouselocation = [x,y]
+
 
 class Window(object):
     """
@@ -150,44 +285,45 @@ class Window(object):
     DIMENSION_TRANSLATE = 1
     DIMENSION_EYE = 10
     window = None # 全局窗口对象
+    W_H = (1000, 800)
 
     def __init__(self):
         self._rangle = 0
         glutInit(sys.argv)
-        glutInitDisplayMode(GLUT_RGBA | GLUT_SINGLE)
-        glutInitWindowSize(640,400)
+        glutInitDisplayMode(GLUT_RGB | GLUT_SINGLE | GLUT_DEPTH)
+        glutInitWindowSize(*Window.W_H)
         glutInitWindowPosition(400,400)
-        Window.window = glutCreateWindow("opengl")
+        Window.window = glutCreateWindow("MagicCube")
         glutDisplayFunc(self.drawGLScene)
         glutIdleFunc(self.drawGLScene)
-        glutReshapeFunc(self.reSizeGLScene, 640, 400)
+        glutReshapeFunc(self.reSizeGLScene, 800, 600)
 
         glutKeyboardFunc(self.key_listener)
         glutSpecialFunc(self.key_listener)
 
-        self.camera = Camera() # 照相机对象
-        self.magicCube = MagicCube() # 魔方对象
-
         glEnable(GL_DEPTH_TEST)
         glDepthFunc(GL_LEQUAL)
 
-        draw_plane_infos = self.magicCube.get_draw_planes()
+        #启用0号光源
+        glEnable(GL_LIGHT0)
 
-        #for draw_plane_info in draw_plane_infos:
-        #    print draw_plane_info
+        x, y, z = MagicCube.COLOR_BLACK
+        # 设置背景颜色
+        glClearColor(x, y, z, 1.0)
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+        glClearDepth(1.0)
+
+        glMatrixMode(GL_PROJECTION)
+        glLoadIdentity()
+        gluPerspective(45.0,float(Window.W_H[0])/float(Window.W_H[1]),0.1,200.0)
 
 
+        self.camera = Camera() # 照相机对象
+        self.magicCube = MagicCube() # 魔方对象
+        self.cube = Cube(Cube.PLANE_FRONT, 1, 1, 1, 1, 0,1,0, 0)
+        self.boy = Boy()
         self._ran = 0
-        #self.magicCube.rotate("F")
-        # self.magicCube.rotate("F")
-        self.magicCube.show()
 
-        # self._cubes = []
-        # self._cubes.append(Cube(-1.0, 0.0, 0.0, 0.0, 0.0, 0.0))
-        # self._cubes.append(Cube(0.0, 0.0, 0.0, 0.0, 0.0, 0.0))
-        # self._cubes.append(Cube(1.0, 0.0, 0.0, 0.0, 0.0, 0.0))
-
-        self.initGL(640, 400)
         glutMainLoop()
 
 
@@ -205,49 +341,23 @@ class Window(object):
         :return:
         """
         glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
+
+
         glMatrixMode(GL_MODELVIEW)
-        #self.camera.setLookat()
-        #for cube in self._cubes:
-        #    cube.draw()
-        #self.camera.setLookat()
-        #glTranslatef(0.0,0.0,0.0)
-        #glBegin(GL_QUADS)
-        #glVertex3f(-1.0, 1.0, 0.0)
-        #glVertex3f(1.0, 1.0, 0.0)
-        #glVertex3f(1.0, -1.0, 0.0)
-        #glVertex3f(-1.0, -1.0, 0.0)
-        #glEnd()
-        self.camera.rove()
+        self.camera.revolution_y_right()
         self.camera.setLookat()
 
-        DrawUtil.draw_line_x(OGLGL)
-        DrawUtil.draw_line_y(OGLGL)
-        DrawUtil.draw_line_z(OGLGL)
+        self.boy.play(self.magicCube)
+        # 绘制罪坐标线
+        #DrawUtil.draw_coordinate_axis(OGLGL)
 
         draw_plane_infos = self.magicCube.get_draw_planes()
-        # draw_plane_infos = self.magicCube.get_draw_plane_info_test(self._ran)
         for draw_plane_info in draw_plane_infos:
             DrawUtil.draw_plane_by_pos_rpos_rangle_side_color(OGLGL, draw_plane_info[0], draw_plane_info[1], draw_plane_info[2], draw_plane_info[3], draw_plane_info[4], draw_plane_info[5])
-        # DrawUtil.draw_cube(oglgl, (2, 2, -2), (0, 1, 0), self._rangle, 2)
-        #for cube in self._cubes:
-        #    cube.draw()
         glFlush()
 
 
 
-    def initGL(self, width, height):
-        x, y, z = MagicCube.COLOR_BLACK
-        # 设置背景颜色
-        glClearColor(x, y, z, 1.0)
-        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT)
-        glClearDepth(1.0)
-        #glDisable(GL_BLEND)
-        #glPolygonMode(GL_FRONT_AND_BACK, GL_LINE)
-        glMatrixMode(GL_PROJECTION)
-        glLoadIdentity()
-        gluPerspective(45.0,float(width)/float(height),0.1,200.0)
-        #self.camera.move(0.0, 0.0, -15)
-        #glDepthFunc(GL_BLEND)
 
 
     def key_listener(self, key, x, y):
@@ -258,56 +368,39 @@ class Window(object):
         :param y:
         :return:
         """
-
-#        logger.info("symbol: %s, ord: %#x, modifiers: %s" % (symbol,  symbol, modifiers))
-        #if key == GLUT_KEY_UP:
-        #    for cube in self._cubes:
-        #        cube.rotatex_axis(-Window.DIMENSION_ROTATE)
-        #elif key == GLUT_KEY_DOWN:
-        #    for cube in self._cubes:
-        #        cube.rotatex_axis(Window.DIMENSION_ROTATE)
-
-        #if key in 'a,b,c,d,e,f,g,h,i,A,B,C,D,E,F,G,H,I':
-        #    self.magicCube.totate(key.upper(), 0)
-
-
-
-        if key == GLUT_KEY_LEFT:
-            self._ran -= 10
-            #self.camera.rotate(30, 0)
-        elif key == GLUT_KEY_RIGHT:
-            self._ran += 10
-            #self.camera.rotate(0, 30)
-
-        #elif key in ('n', 'N'):
-        #    for cube in self._cubes:
-        #        cube.rotatez_axis(-Window.DIMENSION_ROTATE)
-        #elif key in ('m', 'M'):
-        #    for cube in self._cubes:
-        #        cube.rotatez_axis(Window.DIMENSION_ROTATE)
-        #elif key in ('a', 'A'):
-        #    for cube in self._cubes:
-        #        cube.translatex(-Window.DIMENSION_TRANSLATE)
-        #elif key in ('d', 'D'):
-        #    for cube in self._cubes:
-        #        cube.translatey(Window.DIMENSION_TRANSLATE)
+        if key == "1":
+            self.magicCube.rotate_side("F")
+        elif key == "2":
+            self.magicCube.rotate_side("B")
+        elif key == "3":
+            self.magicCube.rotate_side("U")
+        elif key == "4":
+            self.magicCube.rotate_side("D")
+        elif key == "5":
+            self.magicCube.rotate_side("L")
+        elif key == "6":
+            self.magicCube.rotate_side("R")
+        elif key in ('a', 'A'):
+            # 镜头拉近距离
+            self.camera.revolution_y_left()
+        elif key in ('d', 'D'):
+            # 镜头拉远距离
+            self.camera.revolution_y_right()
         elif key in ('w', 'W'):
             # 镜头拉近距离
-            self.camera.move(0.,0., 1 * Window.DIMENSION_EYE)
+            self.camera.revolution_x_left()
         elif key in ('s', 'S'):
             # 镜头拉远距离
-            self.camera.move(0.,0.,-1 * Window.DIMENSION_EYE)
-
-#        elif symbol == key.E:
-#            for cube in self._cubes:
-#                cube.translatez(-Window.DIMENSION_TRANSLATE)
-#        elif symbol == key.Z:
-#            self.eyez = self.eyez + Window.DIMENSION_EYE
-#        elif symbol == key.X:
-#            self.eyez = self.eyez - Window.DIMENSION_EYE
-#        elif symbol == key.ESCAPE:
-#            logger.info("exit..")
-#            sys.exit()
+            self.camera.revolution_x_right()
+        elif key in ('z', 'Z'):
+            # 镜头拉近距离
+            self.camera.revolution_z_left()
+        elif key in ('x', 'X'):
+            # 镜头拉远距离
+            self.camera.revolution_z_left()
+        #elif key == key.ESCAPE:
+        #    logger.info("exit..")
+        #    sys.exit()
 
 
 class ErrorSideTagException(Exception):
@@ -340,6 +433,101 @@ class CountSideIndexException(Exception):
     def __repr__(self):
         return self.count
 
+class Cube(object):
+    """
+    立方体
+    """
+    # 面
+    # 前
+    PLANE_FRONT = 1
+    # 后
+    PLANE_BEHIND = 2
+    # 上
+    PLANE_TOP = 3
+    # 下
+    PLANE_BOTTOM = 4
+    # 左
+    PLANE_LEFT = 5
+    # 右
+    PLANE_RIGHT = 6
+    # 正方体有六个面
+    PLANE_COUNT = 6
+
+    POINT_A = (1.0, 1.0, 1.0)
+    POINT_B = (1.0, 1.0, -1.0)
+    POINT_C = (-1.0, 1.0, -1.0)
+    POINT_D = (-1.0, 1.0, 1.0)
+
+    POINT_E = (1.0, -1.0, 1.0)
+    POINT_F = (1.0, -1.0, -1.0)
+    POINT_G = (-1.0, -1.0, -1.0)
+    POINT_H = (-1.0, -1.0, 1.0)
+
+
+    def __init__(self, dir, x, y, z, side_len, x_rotate_angle, y_rotate_angle, z_rotate_angle, rotate_angle):
+        self.__dir = dir
+        # 坐标
+        self.__x = x
+        self.__y = y
+        self.__z = z
+
+        self.__x_rotate_angle = x_rotate_angle
+        self.__y_rotate_angle = y_rotate_angle
+        self.__z_rotate_angle = z_rotate_angle
+        # 旋转角度
+        self._rotate_angle = rotate_angle
+
+        self.__hs = side_len
+
+    def rotate_up(self):
+        self._rotate_angle += 10
+
+    def rotate_down(self):
+        self._rotate_angle -= 10
+
+    def get_plane_front(self):
+        return self.multipl_len_side((Cube.POINT_D, Cube.POINT_A, Cube.POINT_E, Cube.POINT_H))
+
+    def get_plane_behind(self):
+        return self.multipl_len_side((Cube.POINT_C, Cube.POINT_B, Cube.POINT_F, Cube.POINT_G))
+
+    def get_plane_top(self):
+        return self.multipl_len_side((Cube.POINT_C, Cube.POINT_B, Cube.POINT_A, Cube.POINT_D))
+
+    def get_plane_bottom(self):
+        return self.multipl_len_side((Cube.POINT_G, Cube.POINT_F, Cube.POINT_E, Cube.POINT_H))
+
+    def get_plane_left(self):
+        return self.multipl_len_side((Cube.POINT_D, Cube.POINT_C, Cube.POINT_G, Cube.POINT_H))
+
+    def get_plane_right(self):
+        return self.multipl_len_side((Cube.POINT_A, Cube.POINT_B, Cube.POINT_F, Cube.POINT_E))
+
+    def multipl_len_side(self, points):
+        return tuple(self.len_side_and_dire(point) for point in points)
+
+    def len_side_and_dire(self, pos):
+        change = (1,1,1)
+
+        return (self.__hs /2.0 * pos[0] * change[0], self.__hs /2.0  * pos[1] * change[1], self.__hs /2.0  * pos[2] * change[2])
+
+    def get_pos(self):
+        return self.__x, self.__y, self.__z
+
+    def get_x(self):
+        return self.__x
+
+    def get_y(self):
+        return self.__y
+
+    def get_z(self):
+        return self.__z
+
+    def get_xyz_rotate(self):
+        return self.__x_rotate_angle, self.__y_rotate_angle, self.__z_rotate_angle
+
+    def get_rotate_angle(self):
+        return self._rotate_angle
 
 class DrawUtil(object):
     """
@@ -363,44 +551,60 @@ class DrawUtil(object):
     @staticmethod
     def draw_plan_info(side, pos, size):
         if side == "F" or side == "B":
-            return ((pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0),
-                    (pos[0] - DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0),
-                    (pos[0] - DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] - DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0),
-                    (pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] - DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0))
+            sign = 1
+            if side == "F":
+                sign = -1
+            elif side == "B":
+                sign = 1
+            return ((pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + sign * size/2.0),
+                    (pos[0] - DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + sign * size/2.0),
+                    (pos[0] - DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] - DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + sign * size/2.0),
+                    (pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] - DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + sign * size/2.0))
         elif side == "L" or side == "R":
-            return ((pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0),
-                    (pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] - DrawUtil.get_sign(pos[2]) * size/2.0),
-                    (pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] - DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] - DrawUtil.get_sign(pos[2]) * size/2.0),
-                    (pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] - DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0))
+            sign = 1
+            if side == "R":
+                sign = -1
+            elif side == "L":
+                sign = 1
+            return ((pos[0] + sign * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0),
+                    (pos[0] + sign * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] - DrawUtil.get_sign(pos[2]) * size/2.0),
+                    (pos[0] + sign * size/2.0, pos[1] - DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] - DrawUtil.get_sign(pos[2]) * size/2.0),
+                    (pos[0] + sign * size/2.0, pos[1] - DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0))
         elif side == "U" or side == "D":
-            return ((pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0),
-                    (pos[0] - DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0),
-                    (pos[0] - DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] - DrawUtil.get_sign(pos[2]) * size/2.0),
-                    (pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + DrawUtil.get_sign(pos[1]) * size/2.0, pos[2] - DrawUtil.get_sign(pos[2]) * size/2.0))
+            sign = 1
+            if side == "D":
+                sign = -1
+            elif side == "U":
+                sign = 1
+            return ((pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + sign * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0),
+                    (pos[0] - DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + sign * size/2.0, pos[2] + DrawUtil.get_sign(pos[2]) * size/2.0),
+                    (pos[0] - DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + sign * size/2.0, pos[2] - DrawUtil.get_sign(pos[2]) * size/2.0),
+                    (pos[0] + DrawUtil.get_sign(pos[0]) * size/2.0, pos[1] + sign * size/2.0, pos[2] - DrawUtil.get_sign(pos[2]) * size/2.0))
+
 
     @staticmethod
-    def get_plane_front(half_side):
-        return DrawUtil.multipl_len_side((MagicCube.POINT_D, MagicCube.POINT_A, MagicCube.POINT_E, MagicCube.POINT_H), half_side)
+    def draw_cube_by_cube(oglgl, cube):
+        oglgl.glPushMatrix()
 
-    @staticmethod
-    def get_plane_behind(half_side):
-        return DrawUtil.multipl_len_side((MagicCube.POINT_C, MagicCube.POINT_B, MagicCube.POINT_F, MagicCube.POINT_G), half_side)
+        oglgl.glTranslatef(*cube.get_pos())
 
-    @staticmethod
-    def get_plane_up(half_side):
-        return DrawUtil.multipl_len_side((MagicCube.POINT_C, MagicCube.POINT_B, MagicCube.POINT_A, MagicCube.POINT_D), half_side)
+        oglgl.glTranslatef(DrawUtil.inverse(cube.get_x()), DrawUtil.inverse(cube.get_y()), DrawUtil.inverse(cube.get_z()))
+        x, y, z = cube.get_xyz_rotate()
+        oglgl.glRotatef(cube.get_rotate_angle(), x, y, z)
+        oglgl.glTranslatef(*cube.get_pos())
 
-    @staticmethod
-    def get_plane_down(half_side):
-        return DrawUtil.multipl_len_side((MagicCube.POINT_G, MagicCube.POINT_F, MagicCube.POINT_E, MagicCube.POINT_H), half_side)
+        oglgl.glBegin(oglgl.GL_QUADS)
+        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_WHITE, *cube.get_plane_front())
+        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_RED, *cube.get_plane_behind())
+        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_GREEN, *cube.get_plane_top())
+        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_BLUE, *cube.get_plane_bottom())
+        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_YELLOW, *cube.get_plane_left())
+        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_ORANGE, *cube.get_plane_right())
+        oglgl.glEnd()
 
-    @staticmethod
-    def get_plane_left(half_side):
-        return DrawUtil.multipl_len_side((MagicCube.POINT_D, MagicCube.POINT_C, MagicCube.POINT_G, MagicCube.POINT_H), half_side)
 
-    @staticmethod
-    def get_plane_right(half_side):
-        return DrawUtil.multipl_len_side((MagicCube.POINT_A, MagicCube.POINT_B, MagicCube.POINT_F, MagicCube.POINT_E), half_side)
+        oglgl.glPopMatrix()
+
 
     @staticmethod
     def draw_plane(oglgl, color, a, b, c, d):
@@ -421,22 +625,6 @@ class DrawUtil(object):
         oglgl.glVertex3f(*d)
 
     @staticmethod
-    def draw_cube(oglgl, rpos, side_size):
-        """
-        绘制一个立方体
-        :param oglgl:
-        :param rpos:
-        :param side_size:
-        :return:
-        """
-        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_WHITE, *DrawUtil.get_plane_front(side_size / 2.0))
-        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_RED, *DrawUtil.get_plane_behind(side_size / 2.0))
-        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_GREEN, *DrawUtil.get_plane_up(side_size / 2.0))
-        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_BLUE, *DrawUtil.get_plane_down(side_size / 2.0))
-        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_YELLOW, *DrawUtil.get_plane_left(side_size / 2.0))
-        DrawUtil.draw_plane(oglgl, MagicCube.COLOR_ORANGE, *DrawUtil.get_plane_right(side_size / 2.0))
-
-    @staticmethod
     def inverse(x):
         """
         取反
@@ -450,11 +638,14 @@ class DrawUtil(object):
     @staticmethod
     def revolution(oglgl, pos, rpos, rangle):
         """
-        绕中心轴公转
+        绕rpos
         :return:
         """
         oglgl.glTranslatef(DrawUtil.inverse(pos[0]), DrawUtil.inverse(pos[1]), DrawUtil.inverse(pos[2]))
-        oglgl.glRotatef(rangle, rpos[0],rpos[1], rpos[2])
+        oglgl.glRotatef(rangle, rpos[0],0, 0)
+        oglgl.glRotatef(rangle, 0,rpos[1], 0)
+        oglgl.glRotatef(rangle, 0, 0, rpos[2])
+
         oglgl.glTranslatef(pos[0], pos[1], pos[2])
 
 
@@ -481,6 +672,7 @@ class DrawUtil(object):
     def draw_line(oglgl, xyz1, xyz2, color):
         oglgl.glPushMatrix()
         glLineWidth(1)
+        glLineStipple (1, 1000100010001000)
         oglgl.glBegin(oglgl.GL_LINES)
         glColor3f(*color)
         glVertex3f(*xyz1)
@@ -489,16 +681,21 @@ class DrawUtil(object):
         oglgl.glPopMatrix()
 
     @staticmethod
+    def draw_coordinate_axis(oglgl):
+        DrawUtil.draw_line_x(oglgl)
+        DrawUtil.draw_line_y(oglgl)
+        DrawUtil.draw_line_z(oglgl)
+    @staticmethod
     def draw_line_x(oglgl):
-        DrawUtil.draw_line(oglgl, (-30, 0, 0), (30, 0, 0), MagicCube.COLOR_YELLOW)
+        DrawUtil.draw_line(oglgl, (-30, 0, 0), (30, 0, 0), MagicCube.COLOR_PURPLE)
 
     @staticmethod
     def draw_line_y(oglgl):
-        DrawUtil.draw_line(oglgl, (0, -30, 0), (0, 30, 0), MagicCube.COLOR_GREEN)
+        DrawUtil.draw_line(oglgl, (0, -30, 0), (0, 30, 0), MagicCube.COLOR_PURPLE)
 
     @staticmethod
     def draw_line_z(oglgl):
-        DrawUtil.draw_line(oglgl, ( 0, 0, -30), (0, 0, 30), MagicCube.COLOR_RED)
+        DrawUtil.draw_line(oglgl, ( 0, 0, -30), (0, 0, 30), MagicCube.COLOR_PURPLE)
 
     @staticmethod
     def draw_plane_by_pos_rpos_rangle_side_color(oglgl, side, pos, rpos, rangle, size, color):
@@ -513,11 +710,14 @@ class DrawUtil(object):
         :return:
         """
         oglgl.glPushMatrix()
-        #oglgl.glTranslatef(*pos)
-        #DrawUtil.revolution(oglgl, pos, rpos, rangle)
+
+        oglgl.glRotatef(rangle, rpos[0],rpos[1], rpos[2])
+
         oglgl.glBegin(oglgl.GL_QUADS)
-        DrawUtil.draw_plane(oglgl, color, *DrawUtil.draw_plan_info(side, pos, size))
+        a, b, c, d = DrawUtil.draw_plan_info(side, pos, size)
+        DrawUtil.draw_plane(oglgl, color, a, b, c, d)
         oglgl.glEnd()
+
         oglgl.glPopMatrix()
 
 
@@ -529,24 +729,27 @@ class MagicCube(object):
     COLOR_GREEN = (0, 0.6, 0)
     COLOR_ORANGE = (1, 0.49, 0.14)
     COLOR_BLACK = (0, 0, 0)
+    COLOR_CYAN = (0,255,255)
+    COLOR_PURPLE = (255,0,255)
 
-    STATUS_ROTATE = "ROTATE"
+    STATUS_ROTATE_SIDE = "ROTATE"
     STATUS_PAUSE = "PAUSE"
 
-    POINT_A = (1.0, 1.0, 1.0)
-    POINT_B = (1.0, 1.0, -1.0)
-    POINT_C = (-1.0, 1.0, -1.0)
-    POINT_D = (-1.0, 1.0, 1.0)
-
-    POINT_E = (1.0, -1.0, 1.0)
-    POINT_F = (1.0, -1.0, -1.0)
-    POINT_G = (-1.0, -1.0, -1.0)
-    POINT_H = (-1.0, -1.0, 1.0)
+    TRANS_TYPE_SIDE_F = "F"
+    TRANS_TYPE_SIDE_B = "B"
+    TRANS_TYPE_SIDE_U = "U"
+    TRANS_TYPE_SIDE_D = "D"
+    TRANS_TYPE_SIDE_L = "L"
+    TRANS_TYPE_SIDE_R = "R"
 
     # 边长
     LEN_OF_SIDE = 1
     LEN_OF_HALF_SIDE = LEN_OF_SIDE / 2.0
+    # 旋转速率 = 10
+    ROTATE_ANGLE_RATE = 10
 
+    def is_pause(self):
+        return self._status == MagicCube.STATUS_PAUSE
 
     def __init__(self):
         """
@@ -556,18 +759,62 @@ class MagicCube(object):
         7, 8, 9
         而每个数字面所在的面位(F,R,L,B,U,D)将确定此面所绕的旋转轴和旋转角度(顺时针,大拇指左旋).
         :return:
+        F: 蓝
+        B: 绿
         """
         self._s = {
-        "F": {"square":[1,2,3,    4,5,6,    7,8,9],   "side": "URDL"}, # Front
-        "R": {"square":[11,12,13, 14,15,16, 17,18,19],"side": "UBDF"}, # Right
-        "L": {"square":[21,22,23, 24,25,26, 27,28,29],"side": "UFDB"}, # Left
-        "B": {"square":[31,32,33, 34,35,36, 37,38,39],"side": "ULDR"}, # Behind
-        "U": {"square":[41,42,43, 44,45,46, 47,48,49],"side": "BRFL"}, # Up
-        "D": {"square":[51,52,53, 54,55,56, 57,58,59],"side": "FRBL"}, # Down
+            "F": {"square":[1,2,3,    4,5,6,    7,8,9],   "side": "URDL"}, # Front
+            "R": {"square":[11,12,13, 14,15,16, 17,18,19],"side": "UBDF"}, # Right
+            "L": {"square":[21,22,23, 24,25,26, 27,28,29],"side": "UFDB"}, # Left
+            "B": {"square":[31,32,33, 34,35,36, 37,38,39],"side": "ULDR"}, # Behind
+            "U": {"square":[41,42,43, 44,45,46, 47,48,49],"side": "BRFL"}, # Up
+            "D": {"square":[51,52,53, 54,55,56, 57,58,59],"side": "FRBL"}, # Down
         }
 
         # 魔方状态
         self._status = MagicCube.STATUS_PAUSE
+        self._trans = None
+        self._rang = 0
+
+    def rotate_side(self, side):
+        if not self.can_trans_side(side):
+            logger.warning("cant rotate side %s because now is :%s status and transtype is %s" %(side, self._status, self._trans))
+            return False
+
+        self.rotate(side)
+        return True
+
+    def rotate(self, side_type):
+        new_rang = self._rang + MagicCube.ROTATE_ANGLE_RATE
+        if new_rang >= 90:
+            # 旋转角度设置为零,状态切换
+            self._rang = 0
+            self.rotate_side_change_status(side_type)
+            self._status = MagicCube.STATUS_PAUSE
+            self._trans = None
+            #self.show()
+        else:
+            if self._status == MagicCube.STATUS_PAUSE:
+                self._status = MagicCube.STATUS_ROTATE_SIDE
+                # 这里应该有个转换才对
+                self._trans = side_type
+            self._rang = new_rang
+
+
+    def can_trans_side(self, trans_side):
+        """
+        判断状态是否可以旋转
+        :param trans_side:
+        :return:
+        """
+        if self._status == MagicCube.STATUS_PAUSE:
+            return True
+
+        # 同一时刻只能旋转一条边
+        if self._status == MagicCube.STATUS_ROTATE_SIDE and self._trans == trans_side:
+            return True
+        return False
+
 
     def get_color_by_num(self, num):
         """
@@ -591,32 +838,6 @@ class MagicCube(object):
             return MagicCube.COLOR_WHITE
         else:
             raise CountSideIndexException(num)
-
-    def get_pos_w_h_by_num(self, num):
-        """
-        根据各位数获得每个面的x坐标和y坐标
-        :param num:
-        :return:
-        """
-        n = num % 10
-        if n == 1:
-            return (1, 1)
-        elif n == 2:
-            return (0, 1)
-        elif n == 3:
-            return (-1, 1)
-        elif n == 4:
-            return (1, 0)
-        elif n == 5:
-            return (0, 0)
-        elif n == 6:
-            return (-1, 0)
-        elif n == 7:
-            return (1, -1)
-        elif n == 8:
-            return (0, -1)
-        elif n == 9:
-            return (-1, -1)
 
     def get_pos_high_by_side_tag(self, side):
         if "F" == side:
@@ -644,78 +865,271 @@ class MagicCube(object):
         else:
             raise ErrorSideTagException(side)
 
+    def get_rpos_default(self):
+        return (0, 0, 0)
 
-    def get_rpos_by_side_tag(self, side):
+    def get_rpos_by_side_tag(self, num):
+        if not self.judge_num_is_in_side(num, self._trans):
+            return self.get_rpos_default()
+
+        if "F" == self._trans:
+            return (0, 0, 1)
+        elif "R" == self._trans:
+            return (1, 0, 0)
+        elif "L" == self._trans:
+            return (-1, 0, 0)
+        elif "B" == self._trans:
+            return (0, 0, -1)
+        elif "U" == self._trans:
+            return (0, -1, 0)
+        elif "D" == self._trans:
+            return (0, 1, 0)
+        else:
+            raise ErrorSideTagException(self._trans)
+
+    def get_rangle_default(self):
+        return 0
+
+    def get_rangle_by_side_tag(self, num):
+        if not self.judge_num_is_in_side(num, self._trans):
+            return self.get_rangle_default()
+        else:
+            return self._rang
+
+    def get_pos_num_F(self, num):
+        """
+        根据各位数获得每个面的x坐标和y坐标
+        :param num:
+        :return:
+        """
+        n = num + 1
+        if n == 1:
+            return (1, 1, -1)
+        elif n == 2:
+            return (0, 1, -1)
+        elif n == 3:
+            return (-1, 1, -1)
+        elif n == 4:
+            return (1, 0, -1)
+        elif n == 5:
+            return (0, 0, -1)
+        elif n == 6:
+            return (-1, 0, -1)
+        elif n == 7:
+            return (1, -1, -1)
+        elif n == 8:
+            return (0, -1, -1)
+        elif n == 9:
+            return (-1, -1, -1)
+
+    def get_pos_num_B(self, num):
+        """
+        根据各位数获得每个面的x坐标和y坐标
+        :param num:
+        :return:
+        """
+        n = num + 1
+        if n == 1:
+            return (-1, 1, 1)
+        elif n == 2:
+            return (0, 1, 1)
+        elif n == 3:
+            return (1, 1, 1)
+        elif n == 4:
+            return (-1, 0, 1)
+        elif n == 5:
+            return (0, 0, 1)
+        elif n == 6:
+            return (1, 0, 1)
+        elif n == 7:
+            return (-1, -1, 1)
+        elif n == 8:
+            return (0, -1, 1)
+        elif n == 9:
+            return (1, -1, 1)
+
+    def get_pos_num_L(self, num):
+        """
+        根据各位数获得每个面的x坐标和y坐标
+        :param num:
+        :return:
+        """
+        n = num + 1
+        if n == 1:
+            return (1, 1, 1)
+        elif n == 2:
+            return (1, 1, 0)
+        elif n == 3:
+            return (1, 1, -1)
+        elif n == 4:
+            return (1, 0, 1)
+        elif n == 5:
+            return (1, 0, 0)
+        elif n == 6:
+            return (1, 0, -1)
+        elif n == 7:
+            return (1, -1, 1)
+        elif n == 8:
+            return (1, -1, 0)
+        elif n == 9:
+            return (1, -1, -1)
+
+    def get_pos_num_R(self, num):
+        """
+        根据各位数获得每个面的x坐标和y坐标
+        :param num:
+        :return:
+        """
+        n = num + 1
+        if n == 1:
+            return (-1, 1, -1)
+        elif n == 2:
+            return (-1, 1, 0)
+        elif n == 3:
+            return (-1, 1, 1)
+        elif n == 4:
+            return (-1, 0, -1)
+        elif n == 5:
+            return (-1, 0, 0)
+        elif n == 6:
+            return (-1, 0, 1)
+        elif n == 7:
+            return (-1, -1, -1)
+        elif n == 8:
+            return (-1, -1, 0)
+        elif n == 9:
+            return (-1, -1, 1)
+
+    def get_pos_num_U(self, num):
+        """
+        根据各位数获得每个面的x坐标和y坐标
+        :param num:
+        :return:
+        """
+        n = num + 1
+        if n == 1:
+            return (1, 1, 1)
+        elif n == 2:
+            return (0, 1, 1)
+        elif n == 3:
+            return (-1, 1, 1)
+        elif n == 4:
+            return (1, 1, 0)
+        elif n == 5:
+            return (0, 1, 0)
+        elif n == 6:
+            return (-1, 1, 0)
+        elif n == 7:
+            return (1, 1, -1)
+        elif n == 8:
+            return (0, 1, -1)
+        elif n == 9:
+            return (-1, 1, -1)
+
+    def get_pos_num_D(self, num):
+        """
+        根据各位数获得每个面的x坐标和y坐标
+        :param num:
+        :return:
+        """
+
+        n = num + 1
+        if n == 1:
+            return (1, -1, -1)
+        elif n == 2:
+            return (0, -1, -1)
+        elif n == 3:
+            return (-1, -1, -1)
+        elif n == 4:
+            return (1, -1, 0)
+        elif n == 5:
+            return (0, -1, 0)
+        elif n == 6:
+            return (-1, -1, 0)
+        elif n == 7:
+            return (1, -1, 1)
+        elif n == 8:
+            return (0, -1, 1)
+        elif n == 9:
+            return (-1, -1, 1)
+
+    def get_pos_by_side_and_index(self, side, index):
         if "F" == side:
-            return (0, 0, 0)
+            return self.get_pos_num_F(index)
         elif "R" == side:
-            return (1, 0, 0)
+            return self.get_pos_num_R(index)
         elif "L" == side:
-            return (1, 0, 0)
+            return self.get_pos_num_L(index)
         elif "B" == side:
-            return (0, 0, 0)
+            return self.get_pos_num_B(index)
         elif "U" == side:
-            return (0, 1, 0)
+            return self.get_pos_num_U(index)
         elif "D" == side:
-            return (0, 1, 0)
+            return self.get_pos_num_D(index)
         else:
             raise ErrorSideTagException(side)
 
-    def get_rangle_by_side_tag(self, side):
-        if "F" == side:
-            return 0
-        elif "R" == side:
-            return 180
-        elif "L" == side:
-            return 0
-        elif "B" == side:
-            return 0
-        elif "U" == side:
-            return 0
-        elif "D" == side:
-            return 180
-        else:
-            raise ErrorSideTagException(side)
+    def judge_num_is_in_side(self, num, side):
+        """
+        判断一个数字是否与此面相关
+        :param num:
+        :param side:
+        :return:
+        """
+        if side is None:
+            return False
+        if num in self._s[side]["square"]:
+            return True
+        for s in self._s[side]["side"]:
+            index = self._s[s]["side"].index(side)
+            coordinate = self.get_coordinate_by_index(index)
+            values = self.get_value_by_coordinate(s, coordinate)
+            if num in values:
+                return True
+        return False
 
 
     def get_draw_planes(self):
         planes = []
-        for side, side_item in self._s.iteritems():
-            #if side != "F":
-            if side != "F" and side != "B":
-            #if side != "F" and side != "B" and side != "L":
-                continue
-            for side_num in side_item["square"]:
-                wh = self.get_pos_w_h_by_num(side_num)
-                z = self.get_pos_high_by_side_tag(side)
-                pos = self.get_pos_high_by_wh_high(side, wh, z)
-                rpos = self.get_rpos_by_side_tag(side)
-                rangle = self.get_rangle_by_side_tag(side)
+        for side in "FRLBUD":
+            side_item = self._s.get(side)
+
+            for index, side_num in enumerate(side_item["square"]):
+                pos = self.get_pos_by_side_and_index(side, index)
+                rpos = self.get_rpos_by_side_tag(side_num)
+                rangle = self.get_rangle_by_side_tag(side_num)
                 side_size = MagicCube.LEN_OF_SIDE
                 color = self.get_color_by_num(side_num)
                 item = (side, pos, rpos, rangle, side_size, color)
-                #print item
                 planes.append(item)
+
+
+                # 每一个旋转边的会在加2个黑色的内边
+                # 一个旋转,一个不旋转
+                if self._trans == side:
+                    pos = self.fix_black_axle(self.get_pos_by_side_and_index(side, index), side)
+                    color = MagicCube.COLOR_BLACK
+                    item = (side, pos, rpos, rangle, side_size, color)
+                    planes.append(item)
+                    #一个不旋转
+                    rpos = self.get_rpos_default()
+                    rangle = self.get_rangle_default()
+                    item = (side, pos, rpos, rangle, side_size, color)
+                    planes.append(item)
+
         return planes
 
-
-    def get_draw_plane_info_test(self, range):
+    def fix_black_axle(self, pos, side):
         """
-        绘制边框,用于测试的接口
-        :param side:
+        获取黑色面的轴
         :return:
         """
-        return [
-            ((1 ,  1, 3),  (1,0,0), range, 1, MagicCube.COLOR_YELLOW),
-            ((0 ,  1, 3),  (1,0,0), range, 1, MagicCube.COLOR_WHITE),
-            ((-1,  1, 3),  (1,0,0), range, 1, MagicCube.COLOR_RED),
-            ((1 ,  0, 3),  (1,0,0), range, 1, MagicCube.COLOR_YELLOW),
-            ((0 ,  0, 3),  (1,0,0), range, 1, MagicCube.COLOR_WHITE),
-            ((-1,  0, 3),  (1,0,0), range, 1, MagicCube.COLOR_RED),
-            ((1 , -1, 3), (1,0,0), range, 1, MagicCube.COLOR_YELLOW),
-            ((0 , -1, 3), (1,0,0), range, 1, MagicCube.COLOR_WHITE),
-            ((-1, -1, 3), (1,0,0), range, 1, MagicCube.COLOR_RED),
-        ]
+        if side in "FB":
+            return (pos[0], pos[1], 0)
+        elif side in "UD":
+            return (pos[0], 0, pos[2])
+        elif side in "LR":
+            return (0, pos[1], pos[2])
 
 
     def get_color_by_count(self, count):
@@ -758,12 +1172,60 @@ class MagicCube(object):
         """
         return 6, 7, 8
 
+
     def get_first_col_coordinate(self):
         """
         第1列
         :return:
         """
         return 0, 3, 6
+
+    def reft_trans_seq(self, s, o, t):
+        """
+        左旋顺序:
+        1 正序
+        1 逆序
+        :return:
+        """
+        d = {
+            "F":{
+                "UR": 1,
+                "RD": -1,
+                "DL": 1,
+                "LU": -1
+            },
+            "B":{
+                "UL": -1,
+                "LD": 1,
+                "DR": -1,
+                "RU": 1
+            },
+            "L":{
+                "UF": 1,
+                "FD": 1,
+                "DB": -1,
+                "BU": -1
+            },
+            "R":{
+                "UB": -1,
+                "BD": -1,
+                "DF": 1,
+                "FU": 1
+            },
+            "U":{
+                "BR": 1,
+                "RF": 1,
+                "FL": 1,
+                "LB": 1
+            },
+            "D":{
+                "FR": 1,
+                "RB": 1,
+                "BL": 1,
+                "LF": 1
+            }
+        }
+        return d[s][o+t]
 
     def get_coordinate_by_index(self, i):
         if i == 0:
@@ -795,22 +1257,43 @@ class MagicCube(object):
         s = self._s[side]["square"]
         s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7], s[8] = s[6], s[3], s[0], s[7], s[4], s[1], s[8], s[5], s[2]
 
-    def rotate(self, side):
-        sides = self._s[side]["side"]
-        temp = None
-        sc = []
-        v = []
+    def get_next_side(self, s, side):
+        index = self._s[s]["side"].index(side)
+        if index == len(self._s[s]["side"]) - 1:
+            return self._s[s]["side"][0]
+        else:
+            return self._s[s]["side"][index + 1]
 
+
+    def rotate_side_change_status(self, side):
+        """
+        旋转一个边
+        :param side:
+        :return:
+        """
+        logger.info("rotate change side: %s" %(side,))
+        sides = self._s[side]["side"]
+
+        di = {
+
+        }
+
+        # 自我变换
         self.rotate_self_side(side)
         for s in sides:
             index = self._s[s]["side"].index(side)
             coordinate = self.get_coordinate_by_index(index)
             values = self.get_value_by_coordinate(s, coordinate)
-            sc.append((s, coordinate))
-            v.append(values)
-        v = self.move_tail_to_head(v)
-        for index, s in enumerate(sc):
-            self.set_value_by_coordinate(s[0], s[1], v[index])
+            trans_side = self.get_next_side(side, s)
+            trans_side_index = self._s[trans_side]["side"].index(side)
+            trans_side_coordinate = self.get_coordinate_by_index(trans_side_index)
+            isrev = self.reft_trans_seq(side, s, trans_side)
+            if isrev == -1:
+                trans_side_coordinate = trans_side_coordinate[::-1]
+
+            di[trans_side] = (trans_side_coordinate, values)
+        for k,v in di.iteritems():
+            self.set_value_by_coordinate(k, v[0], v[1])
 
 
 def main():
